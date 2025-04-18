@@ -1,0 +1,33 @@
+{
+  "kind": "collectionType",
+  "collectionName": "trucks",
+  "info": {
+    "singularName": "truck",
+    "pluralName": "trucks",
+    "displayName": "truck"
+  },
+  "options": {
+    "comment": ""
+  },
+  "pluginOptions": {
+    "content-manager": {
+      "visible": true
+    }
+  },
+  "attributes": {
+    "identifier": {
+      "type": "string"
+    },
+    "model": {
+      "type": "enumeration",
+      "enum": ["Toyota Corolla", "Toyota RAV4", "Ford F-Series", "Honda CR-V", "Dacia Sandero"]
+    },
+    "key": {
+      "type": "string",
+      "private": true
+    },
+    "position": {
+      "type": "json"
+    }
+  }
+}

@@ -23,7 +23,7 @@ export async function updateTruckPosition({
   key,
 }: UpdatePositionArgs) {
   try {
-    const url = "http://localhost:1337/api/truck-tracker/update-position";
+    const url = 'http://localhost:1337/api/truck-tracker/update-position';
     const requestData = {
       identifier,
       latitude,
@@ -31,13 +31,13 @@ export async function updateTruckPosition({
       key,
     };
 
-    console.log("Sending request to:", url);
-    console.log("Request data:", JSON.stringify(requestData, null, 2));
+    console.log('Sending request to:', url);
+    console.log('Request data:', JSON.stringify(requestData, null, 2));
 
     const response = await fetch(url, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestData),
     });
@@ -45,18 +45,13 @@ export async function updateTruckPosition({
     const data = (await response.json()) as ApiResponse;
 
     if (!response.ok) {
-      console.error("Full error response:", JSON.stringify(data, null, 2));
-      throw new Error(
-        data.error?.message || data.message || "Failed to update position"
-      );
+      console.error('Full error response:', JSON.stringify(data, null, 2));
+      throw new Error(data.error?.message || data.message || 'Failed to update position');
     }
 
-    console.log("Position updated successfully:", data);
+    console.log('Position updated successfully:', data);
   } catch (error) {
-    console.error(
-      "Error updating position:",
-      error instanceof Error ? error.message : error
-    );
+    console.error('Error updating position:', error instanceof Error ? error.message : error);
   }
 }
 
@@ -66,7 +61,7 @@ if (require.main === module) {
 
   if (args.length !== 4) {
     console.error(
-      "Usage: ts-node update-truck-position.ts <identifier> <latitude> <longitude> <key>"
+      'Usage: ts-node update-truck-position.ts <identifier> <latitude> <longitude> <key>'
     );
     process.exit(1);
   }
@@ -79,7 +74,7 @@ if (require.main === module) {
     longitude: parseFloat(longitude),
     key,
   }).catch((error) => {
-    console.error("Script failed:", error);
+    console.error('Script failed:', error);
     process.exit(1);
   });
 }

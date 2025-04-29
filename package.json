@@ -19,16 +19,20 @@
     "@strapi/plugin-users-permissions": "0.0.0-experimental.e21fe90bf2ab9906267ea6e6ca620bdcc729906c",
     "@strapi/strapi": "0.0.0-experimental.e21fe90bf2ab9906267ea6e6ca620bdcc729906c",
     "better-sqlite3": "11.3.0",
+    "leaflet": "1.9.4",
     "prettier": "^3.5.3",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
+    "react-leaflet": "4.2.1",
     "react-router-dom": "^6.0.0",
     "styled-components": "^6.0.0"
   },
   "devDependencies": {
+    "@types/leaflet": "1.9.4",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/react-leaflet": "^3.0.0",
     "typescript": "^5"
   },
   "engines": {

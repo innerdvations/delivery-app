@@ -1,61 +1,843 @@
-# 🚀 Getting started with Strapi
+# Truck Tracker Plugin Tutorial
 
-Strapi comes with a full featured [Command Line Interface](https://docs.strapi.io/dev-docs/cli) (CLI) which lets you scaffold and manage your project in seconds.
-
-### `develop`
-
-Start your Strapi application with autoReload enabled. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-develop)
-
-```
-npm run develop
-# or
-yarn develop
-```
-
-### `start`
-
-Start your Strapi application with autoReload disabled. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-start)
-
-```
-npm run start
-# or
-yarn start
-```
-
-### `build`
-
-Build your admin panel. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-build)
-
-```
-npm run build
-# or
-yarn build
-```
-
-## ⚙️ Deployment
-
-Strapi gives you many possible deployment options for your project including [Strapi Cloud](https://cloud.strapi.io). Browse the [deployment section of the documentation](https://docs.strapi.io/dev-docs/deployment) to find the best solution for your use case.
-
-```
-yarn strapi deploy
-```
-
-## 📚 Learn more
-
-- [Resource center](https://strapi.io/resource-center) - Strapi resource center.
-- [Strapi documentation](https://docs.strapi.io) - Official Strapi documentation.
-- [Strapi tutorials](https://strapi.io/tutorials) - List of tutorials made by the core team and the community.
-- [Strapi blog](https://strapi.io/blog) - Official Strapi blog containing articles made by the Strapi team and the community.
-- [Changelog](https://strapi.io/changelog) - Find out about the Strapi product updates, new features and general improvements.
-
-Feel free to check out the [Strapi GitHub repository](https://github.com/strapi/strapi). Your feedback and contributions are welcome!
-
-## ✨ Community
-
-- [Discord](https://discord.strapi.io) - Come chat with the Strapi community including the core team.
-- [Forum](https://forum.strapi.io/) - Place to discuss, ask questions and find answers, show your Strapi project and get feedback or just talk with other Community members.
-- [Awesome Strapi](https://github.com/strapi/awesome-strapi) - A curated list of awesome things related to Strapi.
+This guide will walk you through building a Strapi plugin to track delivery trucks in real time. We'll cover every step, from setting up the app to creating a custom map widget in the admin panel. All code snippets are provided exactly as used in the project.
 
 ---
 
-<sub>🤫 Psst! [Strapi is hiring](https://strapi.io/careers).</sub>
+## 1. Clone the App
+
+First, clone the starter code from this repo and set up your environment. This gives you a working Strapi app to build on.
+
+```
+git clone [https://github.com/innerdvations/delivery-app](https://github.com/innerdvations/delivery-app)
+cp .env.example .env
+yarn install
+yarn develop
+```
+
+---
+
+## 2. Create the Plugin
+
+We'll use Strapi's CLI to scaffold a new plugin called `truck-tracker`. This plugin will handle all truck tracking features.
+
+```
+npx @strapi/sdk-plugin init src/plugins/truck-tracker
+✔ plugin name … truck-tracker
+✔ plugin display name … Truck Tracker
+✔ plugin description … Track Trucks!
+✔ plugin author name … xxx
+✔ plugin author email … xxx
+✔ git url … xxx
+✔ plugin license … MIT
+✔ register with the admin panel? … yes
+✔ register with the server? … yes
+✔ use editorconfig? … yes
+✔ use eslint? … yes
+✔ use prettier? … yes
+✔ use typescript? … yes
+```
+
+After running the CLI, add the plugin to your `config/plugins.ts`:
+
+```tsx
+export default () => ({
+  'truck-tracker': {
+    enabled: true,
+    resolve: 'src/plugins/truck-tracker',
+  },
+});
+```
+
+You should now see "Truck Tracker" in the Strapi admin sidebar.
+
+---
+
+## 3. Create the Truck Content Type
+
+Strapi's generator for plugins is currently broken, so we'll manually create a collection type for trucks. This will store each truck's info and location.
+
+Create `content-types/truck.ts` in your plugin:
+
+```tsx
+export default {
+  schema: {
+    kind: 'collectionType',
+    collectionName: 'trucks',
+    info: {
+      singularName: 'truck',
+      pluralName: 'trucks',
+      displayName: 'Delivery Truck',
+      description: '',
+    },
+    // By default, plugin-created content types are not visible in the Strapi admin
+    pluginOptions: {
+      'content-manager': {
+        visible: true,
+      },
+    },
+    attributes: {
+      identifier: {
+        type: 'string',
+        required: true,
+      },
+      model: {
+        type: 'enumeration',
+        required: true,
+        enum: ['Toyota Corolla', 'Toyota RAV4', 'Ford F-Series', 'Honda CR-V', 'Dacia Sandero'],
+      },
+      position: {
+        type: 'json',
+      },
+      positionUpdatedAt: {
+        type: 'datetime',
+      },
+      key: {
+        type: 'string',
+        required: true,
+        private: true,
+      },
+    },
+  },
+};
+```
+
+> **Note:** This content type will be referenced as `plugin::truck-tracker.truck` (not `api::truck.truck`).
+
+Add it to your plugin's content-types index:
+
+```
+import truck from './truck';
+
+export default {
+  truck,
+};
+```
+
+Run `yarn watch` (and restart `yarn develop` if needed) to see the new content type in the admin.
+
+---
+
+## 4. Add a GeoPicker for Admin Location Updates
+
+We'll use [React Leaflet](https://react-leaflet.js.org/) to let admins pick a truck's location on a map.
+
+Install the dependencies (inside the plugin directory):
+
+```
+yarn add leaflet@1.9.4 react-leaflet@4.2.1
+yarn add --dev @types/leaflet@1.9.4 @types/react-leaflet
+```
+
+Create `GeoPicker.tsx` in `plugins/truck-tracker/admin/src/components/GeoPicker.tsx`:
+
+```tsx
+import { Box, Field, Flex, Typography } from '@strapi/design-system';
+import React, { useEffect, useState } from 'react';
+import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css?raw';
+import styled from 'styled-components';
+
+// Types
+interface GeoPosition {
+  latitude: number;
+  longitude: number;
+}
+
+interface GeoPickerProps {
+  name: string;
+  onChange: (event: { target: { name: string; value: object; type: string } }) => void;
+  value?: GeoPosition;
+  intlLabel?: {
+    defaultMessage: string;
+  };
+  required?: boolean;
+}
+
+interface MapEventsProps {
+  onLocationSelected: (lat: number, lng: number) => void;
+}
+
+// Styles
+const MapWrapper = styled.div`
+  height: 400px;
+  width: 100%;
+  margin-bottom: 16px;
+
+  .leaflet-container {
+    height: 100%;
+    width: 100%;
+    border-radius: 4px;
+  }
+`;
+
+// Map Events Component
+const MapEvents: React.FC<MapEventsProps> = ({ onLocationSelected }) => {
+  useMapEvents({
+    click: (e: any) => {
+      onLocationSelected(e.latlng.lat, e.latlng.lng);
+    },
+  });
+
+  return null;
+};
+
+// Default position (Paris)
+const DEFAULT_POSITION: GeoPosition = {
+  latitude: 48.8566,
+  longitude: 2.3522,
+};
+
+const GeoPicker: React.FC<GeoPickerProps> = ({ name, onChange, value, intlLabel, required }) => {
+  const [position, setPosition] = useState<GeoPosition>(() => {
+    try {
+      return value ?? DEFAULT_POSITION;
+    } catch {
+      return DEFAULT_POSITION;
+    }
+  });
+
+  const handlePositionChange = (lat: number, lng: number) => {
+    const newPosition = {
+      latitude: lat,
+      longitude: lng,
+    };
+
+    setPosition(newPosition);
+
+    onChange({
+      target: {
+        name,
+        value: newPosition,
+        type: 'json',
+      },
+    });
+  };
+
+  return (
+    <Field.Root name={name} required={required}>
+      <Field.Label>{intlLabel?.defaultMessage ?? 'Location'}</Field.Label>
+      <Box padding={4}>
+        <Flex direction="column" gap={4}>
+          <MapWrapper>
+            <MapContainer
+              center={[position.latitude, position.longitude]}
+              zoom={13}
+              scrollWheelZoom
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <Marker position={[position.latitude, position.longitude]} />
+              <MapEvents onLocationSelected={handlePositionChange} />
+            </MapContainer>
+          </MapWrapper>
+
+          <Flex gap={4}>
+            <Typography>Latitude: {position.latitude}</Typography>
+            <Typography>Longitude: {position.longitude}</Typography>
+          </Flex>
+        </Flex>
+      </Box>
+      <Field.Error />
+      <Field.Hint />
+    </Field.Root>
+  );
+};
+
+export default GeoPicker;
+```
+
+Register the custom field with the server in `server/src/register.ts`:
+
+```tsx
+// Register the custom field
+strapi.customFields.register({
+  name: 'geo-picker',
+  type: 'json',
+});
+```
+
+Register it in the plugin admin `index.ts`:
+
+```tsx
+import { PinMap } from '@strapi/icons';
+import GeoPicker from './components/GeoPicker';
+
+  register(app: StrapiApp) {
+  // ...
+
+    app.customFields.register({
+      name: 'geo-picker',
+      type: 'json',
+      icon: PinMap,
+      intlLabel: {
+        id: 'custom.fields.geo-picker.label',
+        defaultMessage: 'Geo Position',
+      },
+      intlDescription: {
+        id: 'custom.fields.geo-picker.description',
+        defaultMessage: 'Enter geographic coordinates',
+      },
+      components: {
+        Input: () => ({ default: GeoPicker as React.ComponentType }) as any,
+      },
+    });
+
+// ...
+```
+
+Update the truck schema to use the custom field:
+
+```tsx
+      position: {
+        type: 'customField',
+        customField: 'global::geo-picker',
+      },
+```
+
+If the map doesn't display, you may need to update your Content Security Policy in `config/middlewares.ts`:
+
+```tsx
+  {
+    name: 'strapi::security',
+    config: {
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          'connect-src': ["'self'", 'https:'],
+          'script-src': ["'self'", 'unsafe-inline', 'https://*.basemaps.cartocdn.com'],
+          'media-src': [
+            "'self'",
+            'blob:',
+            'data:',
+            'https://*.basemaps.cartocdn.com',
+            'https://tile.openstreetmap.org',
+            'https://*.tile.openstreetmap.org',
+          ],
+          'img-src': [
+            "'self'",
+            'blob:',
+            'data:',
+            'https://*.basemaps.cartocdn.com',
+            'market-assets.strapi.io',
+            'https://*.tile.openstreetmap.org',
+            'https://unpkg.com/leaflet@1.9.4/dist/images/',
+          ],
+        },
+      },
+    },
+  },
+```
+
+---
+
+## 5. Create an Endpoint for GPS Devices
+
+We'll add an API endpoint so GPS devices can update a truck's position.
+
+In `plugins/truck-tracker/server/src/controllers/controller.ts`:
+
+```tsx
+// ...
+
+// add : Core.Controller to controller types
+const controller = ({ strapi }: { strapi: Core.Strapi }): Core.Controller => ({
+
+ // ...
+
+  async updateTruckPosition(ctx) {
+    const { identifier, latitude, longitude } = ctx.request.body;
+
+    // Get the truck
+    const truck = await strapi.documents('plugin::truck-tracker.truck').findFirst({
+      filters: { identifier },
+    });
+
+    if (!truck) {
+      return ctx.notFound('Truck not found');
+    }
+
+    const updatedTruckPosition = await strapi.documents('plugin::truck-tracker.truck').update({
+      documentId: truck.documentId,
+      data: {
+        position: {
+          latitude,
+          longitude,
+        },
+      } as any,
+    });
+
+    return {
+      data: {
+        identifier: updatedTruckPosition.identifier,
+        position: updatedTruckPosition.position,
+        positionUpdatedAt: updatedTruckPosition.positionUpdatedAt,
+      },
+    };
+  },
+
+// ...
+```
+
+And in `plugins/truck-tracker/server/src/routes/content-api.ts`:
+
+```tsx
+export default [
+  {
+    method: 'POST',
+    path: '/update-position',
+    // name of the controller file & the method.
+    handler: 'controller.updateTruckPosition',
+    config: {
+      policies: [],
+      auth: false,
+    },
+    auth: false,
+  },
+];
+```
+
+You can test this endpoint with:
+
+```
+npx ts-node ./scripts/update-truck-position.ts ABC 52.4 13.4 123
+```
+
+---
+
+## 6. Add a Custom Policy to Verify the Truck Key
+
+To secure the endpoint, we'll add a policy that checks a secret key for each truck.
+
+In `plugins/truck-tracker/server/src/policies/index.ts`:
+
+```tsx
+import { Core } from '@strapi/strapi';
+
+export default {
+  'verify-truck-key': async (
+    policyContext: Core.PolicyContext,
+    _config: unknown,
+    { strapi }: { strapi: Core.Strapi }
+  ) => {
+    const { identifier, key } = policyContext.request.body;
+
+    const truck = await strapi.documents('plugin::truck-tracker.truck').findFirst({
+      filters: { identifier },
+    });
+
+    return truck?.key === key;
+  },
+};
+```
+
+Update the route to use the policy:
+
+```tsx
+// ...
+export default [
+  {
+    method: 'POST',
+    path: '/update-position',
+    handler: 'controller.updateTruckPosition',
+    config: {
+      policies: ['verify-truck-key'],
+      auth: false,
+    },
+    auth: false,
+  },
+];
+```
+
+Test with a wrong key (should fail):
+
+```
+npx ts-node ./scripts/update-truck-position.ts ABC 52.4 13.4 wrong
+```
+
+And with the correct key (should succeed):
+
+```
+npx ts-node ./scripts/update-truck-position.ts ABC 52.4 13.4 123
+```
+
+---
+
+## 7. Automatically Update the Timestamp When Position Changes
+
+We'll add middleware to update the `positionUpdatedAt` timestamp only when the truck's position actually changes.
+
+In `plugins/truck-tracker/server/src/register.ts`:
+
+```tsx
+import type { Core } from '@strapi/strapi';
+
+interface Position {
+  latitude: number;
+  longitude: number;
+}
+
+interface TruckData {
+  position?: Position;
+  positionUpdatedAt?: string;
+}
+
+const register = ({ strapi }: { strapi: Core.Strapi }) => {
+  // Register the custom field
+  strapi.customFields.register({
+    name: 'geo-picker',
+    type: 'json',
+  });
+
+  strapi.documents.use(async (context, next) => {
+    if (context.uid === 'plugin::truck-tracker.truck' && context.action === 'update') {
+      const { data } = context.params as { data: TruckData };
+
+      const originalData = (await strapi
+        .documents('plugin::truck-tracker.truck')
+        .findOne({ documentId: context.params.documentId })) as TruckData;
+
+      const { position: newPos } = data;
+      const { position: oldPos } = originalData;
+
+      // Only update if coordinates have actually changed
+      if (newPos?.latitude !== oldPos?.latitude || newPos?.longitude !== oldPos?.longitude) {
+        data.positionUpdatedAt = new Date().toISOString();
+      }
+    }
+
+    return next();
+  });
+};
+
+export default register;
+```
+
+Now, the timestamp updates only when the position changes, whether from the admin or the update script.
+
+---
+
+## 8. Create an Admin Route to Get Truck Info
+
+We'll add an admin API route to fetch all truck positions for the dashboard widget.
+
+Add this method to the truck controller:
+
+```tsx
+// ...
+ async getTruckPositions(ctx) {
+    const truckPositions = await strapi.documents('plugin::truck-tracker.truck').findMany();
+    return ctx.send(
+      truckPositions.map((truck) => ({
+        identifier: truck.identifier,
+        model: truck.model,
+        documentId: truck.documentId,
+        position: truck.position,
+        positionUpdatedAt: truck.positionUpdatedAt,
+      }))
+    );
+  },
+ // ...
+```
+
+Create `plugins/truck-tracker/server/src/routes/admin-api.ts`:
+
+```tsx
+export default [
+  {
+    method: 'GET',
+    // this will appear at localhost:1337/truck-tracker/truck-positions
+    path: '/truck-positions',
+    handler: 'controller.getTruckPositions',
+    config: {
+      policies: [],
+      auth: false,
+    },
+    auth: false,
+  },
+];
+```
+
+And update `plugin/truck-tracker/server/src/routes/index.ts`:
+
+```tsx
+import contentAPIRoutes from './content-api';
+import adminAPIRoutes from './admin-api';
+
+const routes = {
+  'content-api': {
+    type: 'content-api',
+    routes: contentAPIRoutes,
+  },
+  'admin-api': {
+    type: 'admin',
+    routes: adminAPIRoutes,
+  },
+};
+
+export default routes;
+```
+
+You can test this with:
+
+```
+npx ts-node ./scripts/get-truck-positions.ts
+```
+
+> For simplicity, we leave this route unprotected for now. In production, you should add authentication.
+
+---
+
+## 9. Create a Widget to Display Truck Locations
+
+We'll build a dashboard widget that shows all truck locations on a map.
+
+Create `src/admin/widget-map.tsx`:
+
+```tsx
+import { Link } from '@strapi/design-system';
+import React, { useState, useEffect } from 'react';
+import { MapContainer, Marker, TileLayer, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import styled from 'styled-components';
+
+// Types
+type GeoPosition = [latitude: number, longitude: number];
+
+interface ApiResponse {
+  message?: string;
+  error?: {
+    status: number;
+    name: string;
+    message: string;
+    details?: any;
+  };
+  [key: string]: any;
+}
+
+interface GeoPickerInputProps {
+  name: string;
+  onChange: (event: { target: { name: string; value: string; type: string } }) => void;
+  values?: Truck[];
+  intlLabel?: {
+    defaultMessage: string;
+  };
+  required?: boolean;
+}
+
+interface Truck {
+  id: string;
+  documentId: string;
+  name: string;
+  model: string;
+  position: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface MapEventsProps {
+  onLocationSelected: (latitude: number, longitude: number) => void;
+}
+
+// Styled components
+const MapWrapper = styled.div`
+  height: 600px;
+  width: 100%;
+  margin-bottom: 16px;
+
+  .leaflet-container {
+    height: 100%;
+    width: 100%;
+    border-radius: 4px;
+  }
+`;
+
+const DEFAULT_TRUCKS: Truck[] = [];
+
+const barycenter = (points: { latitude: number; longitude: number }[]): GeoPosition => {
+  const avg = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+
+  return [avg(points.map((p) => p.latitude)), avg(points.map((p) => p.longitude))];
+};
+
+const MapWidget: React.FC<GeoPickerInputProps> = ({ name, onChange, values }) => {
+  const [trucks, setTrucks] = useState<Truck[]>(DEFAULT_TRUCKS);
+  const [center, setCenter] = useState<GeoPosition>([30, 10]);
+  const [zoom, setZoom] = useState<number>(4);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchTruckPositions = async () => {
+      try {
+        const response = await fetch('/truck-tracker/truck-positions');
+
+        if (!response.ok) {
+          const data = (await response.json()) as ApiResponse;
+          throw new Error(data.error?.message || data.message || 'Failed to fetch truck positions');
+        }
+
+        const positions = await response.json();
+        setTrucks(positions);
+        setError(null);
+      } catch (error) {
+        console.error('Error fetching truck positions:', error);
+        setError(error instanceof Error ? error.message : 'Failed to fetch truck positions');
+      }
+    };
+
+    fetchTruckPositions();
+  }, []);
+
+  useEffect(() => {
+    if (trucks.length > 0) {
+      const center = barycenter(trucks.map((t) => t.position));
+      setCenter(center);
+    }
+  }, [trucks]);
+
+  if (error) {
+    return <div>Error: {error}</div>;
+  }
+
+  return (
+    <MapWrapper>
+      <MapContainer center={center} zoom={zoom} scrollWheelZoom>
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        {trucks.map((truck) => (
+          <TruckMarker key={truck.id} truck={truck} />
+        ))}
+      </MapContainer>
+    </MapWrapper>
+  );
+};
+
+const TruckMarker: React.FC<{ truck: Truck }> = ({ truck }) => {
+  const href = `http://localhost:1337/admin/content-manager/collection-types/plugin::truck-tracker.truck/${truck.documentId}`;
+
+  return (
+    <Marker position={[truck.position.latitude, truck.position.longitude]}>
+      <Popup className="request-popup">
+        <h1 style={{ fontWeight: 'bold', fontSize: '1.5rem' }}>{truck.name}</h1>
+        <p style={{ fontSize: '1rem' }}>{truck.model}</p>
+        <Link href={href}>Open in content manager</Link>
+      </Popup>
+    </Marker>
+  );
+};
+
+export { MapWidget };
+```
+
+Register the widget in `src/admin/app.tsx`:
+
+```tsx
+import { getTranslation } from './utils/getTranslation';
+import { PLUGIN_ID } from './pluginId';
+import { Initializer } from './components/Initializer';
+import { PluginIcon } from './components/PluginIcon';
+import { PinMap, Globe } from '@strapi/icons';
+import { MapWidget } from './widget-map';
+import GeoPicker from './components/GeoPicker';
+
+export default {
+  register(app: any) {
+    app.addMenuLink({
+      to: `plugins/${PLUGIN_ID}`,
+      icon: PluginIcon,
+      intlLabel: {
+        id: `${PLUGIN_ID}.plugin.name`,
+        defaultMessage: PLUGIN_ID,
+      },
+      Component: async () => {
+        const { App } = await import('./pages/App');
+
+        return App;
+      },
+    });
+
+    app.registerPlugin({
+      id: PLUGIN_ID,
+      initializer: Initializer,
+      isReady: false,
+      name: PLUGIN_ID,
+    });
+
+    app.customFields.register({
+      name: 'geo-picker',
+      type: 'json',
+      icon: PinMap,
+      intlLabel: {
+        id: 'custom.fields.geo-picker.label',
+        defaultMessage: 'Geo Position',
+      },
+      intlDescription: {
+        id: 'custom.fields.geo-picker.description',
+        defaultMessage: 'Enter geographic coordinates',
+      },
+      components: {
+        Input: () => ({ default: GeoPicker as React.ComponentType }) as any,
+      },
+    });
+
+    // ADD THIS
+    app.widgets.register({
+      icon: Globe,
+      title: {
+        id: `${PLUGIN_ID}.mywidget.title`,
+        defaultMessage: 'Trucks Live Tracker',
+      },
+      component: () => Promise.resolve(MapWidget),
+      pluginId: PLUGIN_ID,
+      id: 'mywidget',
+    });
+  },
+
+  async registerTrads({ locales }: { locales: string[] }) {
+    return Promise.all(
+      locales.map(async (locale) => {
+        try {
+          const { default: data } = await import(`./translations/${locale}.json`);
+
+          return { data, locale };
+        } catch {
+          return { data: {}, locale };
+        }
+      })
+    );
+  },
+};
+```
+
+Enable the widget API in `config/features.ts`:
+
+```tsx
+module.exports = ({ env }) => ({
+  future: {
+    unstableWidgetsApi: true,
+  },
+});
+```
+
+---
+
+## 10. Secure the Admin Route
+
+Once everything works, you can secure the admin route by removing `auth: false` and adding a policy:
+
+```
+policy: [’admin::isAuthenticatedAdmin’]
+```
+
+You can go to the homepage and check that it still works, and try accessing the api route with curl or an anonymous browser session to confirm you no longer have access.
+
+---
+
+## Done!
+
+You now have a fully functional truck tracker plugin for Strapi, complete with real-time map updates and admin dashboard integration.

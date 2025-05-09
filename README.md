@@ -928,23 +928,26 @@ const register = ({ strapi }: { strapi: Core.Strapi }) => {
 export default register;
 ```
 
-Demonstrate that the position timestamp now updates when you save in the admin AND when you run the update script… but not when the position stays the same.
-
 ---
 
-## Done!
+## Testing Your Truck Tracker
 
-You now have a fully functional truck tracker plugin for Strapi! The plugin includes:
+Now that you've built the complete truck tracker plugin, let's test it:
 
-- A custom content type for trucks
-- An interactive map for setting truck positions
-- A dashboard widget showing all trucks
-- A secure API for GPS devices to update positions
-- Automatic timestamp updates for position changes
+1. Create a new truck in the admin panel
 
-You can test the complete system by:
+   - Set an identifier (like "TRUCK-001")
+   - Choose a model from the dropdown
+   - Set a position using the map
+   - Save the truck
 
-1. Creating a truck in the admin panel
-2. Setting its position using the map
-3. Updating its position using the GPS device endpoint
-4. Watching the changes appear in the dashboard widget
+2. View the truck on the dashboard
+
+   - Go to the Strapi dashboard
+   - Add the "Trucks Live Tracker" widget
+   - You should see your truck on the map
+
+3. Update the truck's position
+   - Use the GPS device endpoint to update the position
+   - The widget should automatically update to show the new position
+   - The positionUpdatedAt timestamp should only update when the position changes

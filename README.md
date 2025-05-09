@@ -55,9 +55,15 @@ You should now see "Truck Tracker" in the Strapi admin sidebar.
 
 ## 3. Create the Truck Content Type
 
-Strapi's generator for plugins is currently broken, so we'll manually create a collection type for trucks. This will store each truck's info and location.
+We'll create a collection type for trucks that will store each truck's information and location. The schema includes:
 
-> **Note:** This content type will be referenced as `plugin::truck-tracker.truck` (not `api::truck.truck`).
+- `identifier`: A unique identifier for each truck (like a license plate number)
+- `model`: The truck's model, restricted to a predefined list of options
+- `position`: GPS coordinates stored as a JSON object with latitude and longitude
+- `positionUpdatedAt`: A timestamp for when the position was last updated
+- `key`: A private key used for secure position updates from GPS devices
+
+Note that this content type will be referenced as `plugin::truck-tracker.truck` in the code, not `api::truck.truck`. This is because it's part of our plugin rather than the main API.
 
 Create `content-types/truck.ts` in your plugin:
 
@@ -128,6 +134,13 @@ Run `yarn watch` (and restart `yarn develop` if needed) to see the new content t
 ---
 
 ## 4. Add a GeoPicker for Admin Location Updates
+
+The GeoPicker component will need to:
+
+- Shows a map centered on the current position
+- Allows clicking to set a new position
+- Displays the current latitude and longitude
+- Updates the truck's position in the database
 
 We'll use [React Leaflet](https://react-leaflet.js.org/) to let admins pick a truck's location on a map.
 
@@ -341,7 +354,13 @@ If the map doesn't display, you may need to update your Content Security Policy 
 
 ## 5. Create a Widget to Display Truck Locations
 
-We'll build a dashboard widget that shows all truck locations on a map.
+We'll create a dashboard widget that shows all trucks on a map. This widget will:
+
+- Display a map centered on the average position of all trucks
+- Shows markers for each truck
+- Provides popups with truck information
+- Includes links to edit truck details
+- Updates automatically when truck positions change
 
 Create `src/admin/widget-map.tsx`:
 
@@ -708,7 +727,14 @@ useEffect(() => {
 
 ## 8. Create Endpoint for GPS Device
 
-We'll add an API endpoint so GPS devices can update a truck's position.
+We'll create a secure endpoint that allows GPS devices to update truck positions. This endpoint:
+
+- Accepts POST requests with truck identifier and coordinates
+- Verifies the truck exists
+- Updates only the position data
+- Returns the updated position and timestamp
+
+For security, we'll add a policy that verifies a secret key for each truck. This ensures that only authorized devices can update positions. In a production environment, you might want to use a more sophisticated authentication method like TOTP (Time-based One-Time Password).
 
 In `plugins/truck-tracker/server/src/controllers/controller.ts`:
 
@@ -782,7 +808,14 @@ npx ts-node ./scripts/update-truck-position.ts ABC 52.4 13.4 123
 
 ## 9. Add Custom Policy to Verify the Key
 
-To secure the endpoint, we'll add a policy that checks a secret key for each truck.
+We'll add a policy to secure the position update endpoint. This policy:
+
+- Extracts the truck identifier and key from the request
+- Looks up the truck in the database
+- Verifies that the provided key matches the truck's key
+- Only allows the update if the key is correct
+
+This provides a simple but effective security layer. You can test it by trying to update a position with both correct and incorrect keys.
 
 In `plugins/truck-tracker/server/src/policies/index.ts`:
 
@@ -840,7 +873,14 @@ npx ts-node ./scripts/update-truck-position.ts ABC 52.4 13.4 123
 
 ## 10. Add Document Service Middleware
 
-We'll add middleware to update the `positionUpdatedAt` timestamp only when the truck's position actually changes.
+We'll add middleware to automatically update the `positionUpdatedAt` timestamp. This middleware:
+
+- Triggers only when a truck's position is updated
+- Compares the new position with the old one
+- Updates the timestamp only if the position actually changed
+- Works for both admin updates and GPS device updates
+
+This optimization ensures that the timestamp only updates when necessary, making it more accurate for tracking position changes.
 
 In `plugins/truck-tracker/server/src/register.ts`:
 
@@ -892,18 +932,19 @@ Demonstrate that the position timestamp now updates when you save in the admin A
 
 ---
 
-## 11. Secure the Admin Route
-
-Once everything works, you can secure the admin route by removing `auth: false` and adding a policy:
-
-```
-policy: ['admin::isAuthenticatedAdmin']
-```
-
-You can go to the homepage and check that it still works, and try accessing the api route with curl or an anonymous browser session to confirm you no longer have access.
-
----
-
 ## Done!
 
-You now have a fully functional truck tracker plugin for Strapi, complete with real-time map updates and admin dashboard integration.
+You now have a fully functional truck tracker plugin for Strapi! The plugin includes:
+
+- A custom content type for trucks
+- An interactive map for setting truck positions
+- A dashboard widget showing all trucks
+- A secure API for GPS devices to update positions
+- Automatic timestamp updates for position changes
+
+You can test the complete system by:
+
+1. Creating a truck in the admin panel
+2. Setting its position using the map
+3. Updating its position using the GPS device endpoint
+4. Watching the changes appear in the dashboard widget

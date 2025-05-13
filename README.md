@@ -557,18 +557,6 @@ import 'leaflet/dist/leaflet.css';
 import styled from 'styled-components';
 
 // #region Types & Styles
-type GeoPosition = [latitude: number, longitude: number];
-
-interface GeoPickerInputProps {
-  name: string;
-  onChange: (event: { target: { name: string; value: string; type: string } }) => void;
-  values?: Truck[];
-  intlLabel?: {
-    defaultMessage: string;
-  };
-  required?: boolean;
-}
-
 interface Truck {
   identifier: string;
   documentId: string;
@@ -609,21 +597,13 @@ const DEFAULT_TRUCKS: Truck[] = [
   },
 ];
 
-const barycenter = (trucks: Truck[]): GeoPosition => {
-  const avg = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
-  const points = trucks.map((truck) => truck.position);
-
-  return [avg(points.map((p) => p.latitude)), avg(points.map((p) => p.longitude))];
-};
-
-const MapWidget: React.FC<GeoPickerInputProps> = () => {
+const MapWidget: React.FC<MapEventsProps> = () => {
   const [trucks] = useState<Truck[]>(DEFAULT_TRUCKS);
-  const [center] = useState<GeoPosition>(barycenter(trucks));
-  const [zoom] = useState<number>(13);
+  const [zoom] = useState<number>(9);
 
   return (
     <MapWrapper>
-      <MapContainer center={center} zoom={zoom} scrollWheelZoom>
+      <MapContainer center={[[48.8854611, 2.3284453]]} zoom={zoom} scrollWheelZoom>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -746,16 +726,6 @@ import styled from 'styled-components';
 import { useFetchClient } from '@strapi/strapi/admin';
 
 // #region Types & Styles
-interface GeoPickerInputProps {
-  name: string;
-  onChange: (event: { target: { name: string; value: string; type: string } }) => void;
-  values?: Truck[];
-  intlLabel?: {
-    defaultMessage: string;
-  };
-  required?: boolean;
-}
-
 interface Truck {
   identifier: string;
   documentId: string;

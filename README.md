@@ -151,7 +151,100 @@ yarn add leaflet@1.9.4 react-leaflet@4.2.1
 yarn add --dev @types/leaflet@1.9.4 @types/react-leaflet
 ```
 
-Create `GeoPicker.tsx` in `plugins/truck-tracker/admin/src/components/GeoPicker.tsx`:
+First, let's create a basic text input version of the GeoPicker in `plugins/truck-tracker/admin/src/components/GeoPicker.tsx`:
+
+```tsx
+import { Field, JSONInput } from '@strapi/design-system';
+import React from 'react';
+
+// #region Types and Styles
+interface GeoPickerProps {
+  name: string;
+  onChange: (event: { target: { name: string; value: object; type: string } }) => void;
+  value?: object;
+  intlLabel?: {
+    defaultMessage: string;
+  };
+  required?: boolean;
+}
+// #endregion
+
+const GeoPicker: React.FC<GeoPickerProps> = ({ name, onChange, value, intlLabel, required }) => {
+  // onChange is how we tell Strapi what the current value of our custom field is
+  const handlePositionChange = (input: string) => {
+    try {
+      const value = JSON.parse(input);
+      onChange({ target: { name, value, type: 'json' } });
+    } catch {
+      // Handle invalid JSON
+    }
+  };
+
+  const strValue = JSON.stringify(value, null, 2);
+
+  return (
+    <Field.Root name={name} required={required}>
+      <Field.Label>{intlLabel?.defaultMessage ?? 'Location'}</Field.Label>
+      <JSONInput value={strValue} onChange={handlePositionChange}></JSONInput>
+      <Field.Error />
+      <Field.Hint />
+    </Field.Root>
+  );
+};
+
+export default GeoPicker;
+```
+
+Register the custom field with the server in `server/src/register.ts`:
+
+```tsx
+// Register the custom field
+strapi.customFields.register({
+  name: 'geo-picker',
+  type: 'json',
+});
+```
+
+Register it in the plugin admin `index.ts`:
+
+```tsx
+import { PinMap } from '@strapi/icons';
+import GeoPicker from './components/GeoPicker';
+
+  register(app: StrapiApp) {
+  // ...
+
+    app.customFields.register({
+      name: 'geo-picker',
+      type: 'json',
+      icon: PinMap,
+      intlLabel: {
+        id: 'custom.fields.geo-picker.label',
+        defaultMessage: 'Geo Position',
+      },
+      intlDescription: {
+        id: 'custom.fields.geo-picker.description',
+        defaultMessage: 'Enter geographic coordinates',
+      },
+      components: {
+        Input: () => ({ default: GeoPicker as React.ComponentType }) as any,
+      },
+    });
+
+// ...
+```
+
+Update the truck schema to use the custom field:
+
+```tsx
+      position: {
+        type: 'customField',
+        customField: 'global::geo-picker',
+        required: true
+      },
+```
+
+Now, let's enhance the GeoPicker with a map interface. Update `plugins/truck-tracker/admin/src/components/GeoPicker.tsx`:
 
 ```tsx
 import { Box, Field, Flex, Typography } from '@strapi/design-system';
@@ -267,55 +360,6 @@ const GeoPicker: React.FC<GeoPickerProps> = ({ name, onChange, value, intlLabel,
 export default GeoPicker;
 ```
 
-Register the custom field with the server in `server/src/register.ts`:
-
-```tsx
-// Register the custom field
-strapi.customFields.register({
-  name: 'geo-picker',
-  type: 'json',
-});
-```
-
-Register it in the plugin admin `index.ts`:
-
-```tsx
-import { PinMap } from '@strapi/icons';
-import GeoPicker from './components/GeoPicker';
-
-  register(app: StrapiApp) {
-  // ...
-
-    app.customFields.register({
-      name: 'geo-picker',
-      type: 'json',
-      icon: PinMap,
-      intlLabel: {
-        id: 'custom.fields.geo-picker.label',
-        defaultMessage: 'Geo Position',
-      },
-      intlDescription: {
-        id: 'custom.fields.geo-picker.description',
-        defaultMessage: 'Enter geographic coordinates',
-      },
-      components: {
-        Input: () => ({ default: GeoPicker as React.ComponentType }) as any,
-      },
-    });
-
-// ...
-```
-
-Update the truck schema to use the custom field:
-
-```tsx
-      position: {
-        type: 'customField',
-        customField: 'global::geo-picker',
-        required: true
-      },
-```
-
 If the map doesn't display, you may need to update your Content Security Policy in `config/middlewares.ts`:
 
 ```tsx
@@ -362,7 +406,274 @@ We'll create a dashboard widget that shows all trucks on a map. This widget will
 - Includes links to edit truck details
 - Updates automatically when truck positions change
 
-Create `src/admin/widget-map.tsx`:
+First, let's create a basic widget with just a map (no trucks) in `src/admin/widget-map.tsx`:
+
+```tsx
+import React from 'react';
+import { MapContainer, TileLayer } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import styled from 'styled-components';
+
+// # region Types and Styles
+// Styled components
+const MapWrapper = styled.div`
+  height: 100%;
+  width: 100%;
+
+  .leaflet-container {
+    height: 100%;
+    width: 100%;
+    border-radius: 4px;
+  }
+`;
+// #endregion
+
+// Default position (Paris)
+const DEFAULT_POSITION = [48.8854611, 2.3284453] as [number, number];
+
+const MapWidget: React.FC = () => {
+  return (
+    <MapWrapper>
+      <MapContainer center={DEFAULT_POSITION} zoom={20} scrollWheelZoom>
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+      </MapContainer>
+    </MapWrapper>
+  );
+};
+
+export { MapWidget };
+```
+
+Register the widget in `src/admin/app.tsx`:
+
+```tsx
+import { getTranslation } from './utils/getTranslation';
+import { PLUGIN_ID } from './pluginId';
+import { Initializer } from './components/Initializer';
+import { PluginIcon } from './components/PluginIcon';
+import { PinMap, Globe } from '@strapi/icons';
+import { MapWidget } from './widget-map';
+import GeoPicker from './components/GeoPicker';
+
+export default {
+  register(app: any) {
+    app.addMenuLink({
+      to: `plugins/${PLUGIN_ID}`,
+      icon: PluginIcon,
+      intlLabel: {
+        id: `${PLUGIN_ID}.plugin.name`,
+        defaultMessage: PLUGIN_ID,
+      },
+      Component: async () => {
+        const { App } = await import('./pages/App');
+
+        return App;
+      },
+    });
+
+    app.registerPlugin({
+      id: PLUGIN_ID,
+      initializer: Initializer,
+      isReady: false,
+      name: PLUGIN_ID,
+    });
+
+    app.customFields.register({
+      name: 'geo-picker',
+      type: 'json',
+      icon: PinMap,
+      intlLabel: {
+        id: 'custom.fields.geo-picker.label',
+        defaultMessage: 'Geo Position',
+      },
+      intlDescription: {
+        id: 'custom.fields.geo-picker.description',
+        defaultMessage: 'Enter geographic coordinates',
+      },
+      components: {
+        Input: () => ({ default: GeoPicker as React.ComponentType }) as any,
+      },
+    });
+
+// ...
+```
+
+Update the truck schema to use the custom field:
+
+```tsx
+      position: {
+        type: 'customField',
+        customField: 'global::geo-picker',
+        required: true
+      },
+```
+
+Now, let's enhance the GeoPicker with a map interface. Update `plugins/truck-tracker/admin/src/components/GeoPicker.tsx`:
+
+```tsx
+import { Box, Field, Flex, Typography } from '@strapi/design-system';
+import React, { useState } from 'react';
+import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import styled from 'styled-components';
+
+// #region Types and Styles
+interface GeoPosition {
+  latitude: number;
+  longitude: number;
+}
+
+interface GeoPickerProps {
+  name: string;
+  onChange: (event: { target: { name: string; value: object; type: string } }) => void;
+  value?: GeoPosition;
+  intlLabel?: {
+    defaultMessage: string;
+  };
+  required?: boolean;
+}
+
+interface MapEventsProps {
+  onLocationSelected: (lat: number, lng: number) => void;
+}
+
+// Styles
+const MapWrapper = styled.div`
+  height: 400px;
+  width: 100%;
+  margin-bottom: 16px;
+
+  .leaflet-container {
+    z-index: 0;
+    height: 100%;
+    width: 100%;
+    border-radius: 4px;
+  }
+`;
+// #endregion
+
+// Map Events Component
+const MapEvents: React.FC<MapEventsProps> = ({ onLocationSelected }) => {
+  useMapEvents({
+    click: (e: any) => {
+      onLocationSelected(e.latlng.lat, e.latlng.lng);
+    },
+  });
+
+  return null;
+};
+
+// Default position (Paris)
+const DEFAULT_POSITION: GeoPosition = {
+  latitude: 48.8854611,
+  longitude: 2.3284453,
+};
+
+const GeoPicker: React.FC<GeoPickerProps> = ({ name, onChange, value, intlLabel, required }) => {
+  const [position, setPosition] = useState<GeoPosition>(() => {
+    try {
+      return value ?? DEFAULT_POSITION;
+    } catch {
+      return DEFAULT_POSITION;
+    }
+  });
+
+  const handlePositionChange = (lat: number, lng: number) => {
+    const newPosition = {
+      latitude: lat,
+      longitude: lng,
+    };
+
+    setPosition(newPosition);
+
+    onChange({
+      target: {
+        name,
+        value: newPosition,
+        type: 'json',
+      },
+    });
+  };
+
+  return (
+    <Field.Root name={name} required={required}>
+      <Field.Label>{intlLabel?.defaultMessage ?? 'Location'}</Field.Label>
+      <Box padding={4}>
+        <MapWrapper>
+          <MapContainer center={[position.latitude, position.longitude]} zoom={20} scrollWheelZoom>
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <Marker position={[position.latitude, position.longitude]} />
+            <MapEvents onLocationSelected={handlePositionChange} />
+          </MapContainer>
+        </MapWrapper>
+
+        <Flex gap={4}>
+          <Typography>Latitude: {position.latitude}</Typography>
+          <Typography>Longitude: {position.longitude}</Typography>
+        </Flex>
+      </Box>
+      <Field.Error />
+      <Field.Hint />
+    </Field.Root>
+  );
+};
+
+export default GeoPicker;
+```
+
+If the map doesn't display, you may need to update your Content Security Policy in `config/middlewares.ts`:
+
+```tsx
+  {
+    name: 'strapi::security',
+    config: {
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          'connect-src': ["'self'", 'https:'],
+          'script-src': ["'self'", 'unsafe-inline', 'https://*.basemaps.cartocdn.com'],
+          'media-src': [
+            "'self'",
+            'blob:',
+            'data:',
+            'https://*.basemaps.cartocdn.com',
+            'https://tile.openstreetmap.org',
+            'https://*.tile.openstreetmap.org',
+          ],
+          'img-src': [
+            "'self'",
+            'blob:',
+            'data:',
+            'https://*.basemaps.cartocdn.com',
+            'market-assets.strapi.io',
+            'https://*.tile.openstreetmap.org',
+            'https://unpkg.com/leaflet@1.9.4/dist/images/',
+          ],
+        },
+      },
+    },
+  },
+```
+
+---
+
+## 6. Create a Widget to Display Truck Locations
+
+We'll create a dashboard widget that shows all trucks on a map. This widget will:
+
+- Display a map centered on the average position of all trucks
+- Shows markers for each truck
+- Provides popups with truck information
+- Includes links to edit truck details
+- Updates automatically when truck positions change
+
+First, let's create a basic widget with just a map (no trucks) in `src/admin/widget-map.tsx`:
 
 ```tsx
 import React from 'react';
@@ -493,93 +804,7 @@ module.exports = ({ env }) => ({
 });
 ```
 
----
-
-## 6. Create an Admin Route to Get Truck Info
-
-We'll add an admin API route to fetch all truck positions for the dashboard widget.
-
-Add this method to the truck controller:
-
-```tsx
-import { Core } from '@strapi/strapi';
-
-const truck = ({ strapi }: { strapi: Core.Strapi }): Core.Controller => ({
-  async getTruckPositions(ctx) {
-    const trucks = await strapi
-      .documents('plugin::truck-tracker.truck')
-      // Only select the necessary fields in the query
-      .findMany({ fields: ['identifier', 'model', 'position', 'positionUpdatedAt'] });
-
-    return ctx.send(trucks);
-  },
-});
-
-export default truck;
-```
-
-Export the controller from the controllers/index.ts file:
-
-```tsx
-import controller from './controller';
-import truck from './truck';
-
-export default {
-  controller,
-  truck,
-};
-```
-
-Create file `plugins/truck-tracker/server/src/routes/admin-api.ts`:
-
-```tsx
-export default [
-  {
-    method: 'GET',
-    // this will appear at localhost:1337/truck-tracker/truck-positions
-    path: '/truck-positions',
-    handler: 'truck.getTruckPositions',
-    config: {
-      policies: [],
-      auth: false,
-    },
-  },
-];
-```
-
-In `plugin/truck-tracker/server/src/routes/index.ts` we need to add the admin routes:
-
-```tsx
-import contentAPIRoutes from './content-api';
-import adminAPIRoutes from './admin-api';
-
-const routes = {
-  'content-api': {
-    type: 'content-api',
-    routes: contentAPIRoutes,
-  },
-  'admin-api': {
-    type: 'admin',
-    routes: adminAPIRoutes,
-  },
-};
-
-export default routes;
-```
-
-You can test this with:
-
-```
-npx ts-node ./scripts/get-truck-positions.ts
-```
-
-> For simplicity, we leave this route unprotected for now. In production, you should add authentication.
-
----
-
-## 7. Call the Admin Route from the Widget
-
-Update the MapWidget component to fetch and display truck data:
+Now, let's enhance the widget to show truck data. Update `src/admin/widget-map.tsx`:
 
 ```tsx
 import { Link } from '@strapi/design-system';
@@ -689,7 +914,93 @@ const TruckMarker: React.FC<{ truck: Truck }> = ({ truck }) => {
 export { MapWidget };
 ```
 
-Add the HTTP call to fetch truck positions:
+---
+
+## 7. Create an Admin Route to Get Truck Info
+
+We'll add an admin API route to fetch all truck positions for the dashboard widget.
+
+Add this method to the truck controller:
+
+```tsx
+import { Core } from '@strapi/strapi';
+
+const truck = ({ strapi }: { strapi: Core.Strapi }): Core.Controller => ({
+  async getTruckPositions(ctx) {
+    const trucks = await strapi
+      .documents('plugin::truck-tracker.truck')
+      // Only select the necessary fields in the query
+      .findMany({ fields: ['identifier', 'model', 'position', 'positionUpdatedAt'] });
+
+    return ctx.send(trucks);
+  },
+});
+
+export default truck;
+```
+
+Export the controller from the controllers/index.ts file:
+
+```tsx
+import controller from './controller';
+import truck from './truck';
+
+export default {
+  controller,
+  truck,
+};
+```
+
+Create file `plugins/truck-tracker/server/src/routes/admin-api.ts`:
+
+```tsx
+export default [
+  {
+    method: 'GET',
+    // this will appear at localhost:1337/truck-tracker/truck-positions
+    path: '/truck-positions',
+    handler: 'truck.getTruckPositions',
+    config: {
+      policies: [],
+      auth: false,
+    },
+  },
+];
+```
+
+In `plugin/truck-tracker/server/src/routes/index.ts` we need to add the admin routes:
+
+```tsx
+import contentAPIRoutes from './content-api';
+import adminAPIRoutes from './admin-api';
+
+const routes = {
+  'content-api': {
+    type: 'content-api',
+    routes: contentAPIRoutes,
+  },
+  'admin-api': {
+    type: 'admin',
+    routes: adminAPIRoutes,
+  },
+};
+
+export default routes;
+```
+
+You can test this with:
+
+```
+npx ts-node ./scripts/get-truck-positions.ts
+```
+
+> For simplicity, we leave this route unprotected for now. In production, you should add authentication.
+
+---
+
+## 8. Call the Admin Route from the Widget
+
+Update the MapWidget component to fetch and display truck data:
 
 ```tsx
 const [trucks, setTrucks] = useState<Truck[]>(DEFAULT_TRUCKS);
@@ -725,7 +1036,7 @@ useEffect(() => {
 
 ---
 
-## 8. Create Endpoint for GPS Device
+## 9. Create Endpoint for GPS Device
 
 We'll create a secure endpoint that allows GPS devices to update truck positions. This endpoint:
 
@@ -806,7 +1117,7 @@ npx ts-node ./scripts/update-truck-position.ts ABC 52.4 13.4 123
 
 ---
 
-## 9. Add Custom Policy to Verify the Key
+## 10. Add Custom Policy to Verify the Key
 
 We'll add a policy to secure the position update endpoint. This policy:
 
@@ -927,6 +1238,10 @@ const register = ({ strapi }: { strapi: Core.Strapi }) => {
 
 export default register;
 ```
+
+Demonstrate that the position timestamp now updates when you save in the admin AND when you run the update script… but not when the position stays the same.
+
+In case it's not working, it might be because we have to rebuild for some reason.
 
 ---
 

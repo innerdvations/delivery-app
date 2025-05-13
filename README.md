@@ -794,16 +794,6 @@ export default {
 };
 ```
 
-Enable the widget API in `config/features.ts`:
-
-```tsx
-module.exports = ({ env }) => ({
-  future: {
-    unstableWidgetsApi: true,
-  },
-});
-```
-
 Now, let's enhance the widget to show truck data. Update `src/admin/widget-map.tsx`:
 
 ```tsx

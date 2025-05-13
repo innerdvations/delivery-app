@@ -67,7 +67,7 @@ We'll create a collection type for trucks that will store each truck's informati
 
 Note that this content type will be referenced as `plugin::truck-tracker.truck` in the code, not `api::truck.truck`. This is because it's part of our plugin rather than the main API.
 
-Create `content-types/truck.ts` in your plugin:
+Create `plugins/truck-tracker/server/src/content-types/truck.ts`:
 
 ```tsx
 export default {
@@ -237,7 +237,7 @@ Update the truck schema to use the custom field:
       },
 ```
 
-You can now test that it works by going to the creat or edit page for a truck.
+You can now test that it works by going to the create or edit page for a truck.
 
 Now, let's enhance the GeoPicker with a map interface.
 
@@ -420,7 +420,7 @@ We'll create a dashboard widget that shows all trucks on a map. This widget will
 - Includes links to edit truck details
 - Updates automatically when truck positions change
 
-First, let's create a basic widget with just a map (no trucks) in `src/admin/widget-map.tsx`:
+First, let's create a basic widget with just a map (no trucks) in `plugins/truck-tracker/admin/src/components/MapWidget.tsx`:
 
 ```tsx
 import React from 'react';
@@ -461,7 +461,7 @@ const MapWidget: React.FC = () => {
 export { MapWidget };
 ```
 
-Register the widget in `src/admin/app.tsx`:
+Register the widget in `plugins/truck-tracker/admin/src/index.ts`:
 
 ```tsx
 import { getTranslation } from './utils/getTranslation';
@@ -469,7 +469,7 @@ import { PLUGIN_ID } from './pluginId';
 import { Initializer } from './components/Initializer';
 import { PluginIcon } from './components/PluginIcon';
 import { PinMap, Globe } from '@strapi/icons';
-import { MapWidget } from './widget-map';
+import { MapWidget } from './components/MapWidget';
 import GeoPicker from './components/GeoPicker';
 
 export default {
@@ -663,7 +663,7 @@ Check the homepage again to see how it looks.
 
 To provide the actual truck data to the widget, we will need to add an admin API route.
 
-Add this method to the truck controller:
+Create a truck controller at 'plugins/truck-tracker/server/src/controllers/truck.ts'
 
 ```tsx
 import { Core } from '@strapi/strapi';
@@ -731,12 +731,6 @@ const routes = {
 export default routes;
 ```
 
-You can test this with:
-
-```
-npx ts-node ./scripts/get-truck-positions.ts
-```
-
 ---
 
 ## 8. Call the Admin Route from the Widget
@@ -744,36 +738,118 @@ npx ts-node ./scripts/get-truck-positions.ts
 Update the MapWidget component to fetch and display truck data:
 
 ```tsx
-const [trucks, setTrucks] = useState<Truck[]>(DEFAULT_TRUCKS);
-const [center, setCenter] = useState<GeoPosition>(barycenter(trucks));
-const [zoom] = useState<number>(13);
+import { Link } from '@strapi/design-system';
+import React, { useEffect, useState } from 'react';
+import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import styled from 'styled-components';
+import { useFetchClient } from '@strapi/strapi/admin';
 
-const { get } = useFetchClient();
-
-useEffect(() => {
-  const fetchTruckPositions = async () => {
-    try {
-      const data = await get('/truck-tracker/truck-positions');
-
-      if (!response.ok) {
-        throw new Error(data.error?.message ?? data.message ?? 'Failed to fetch truck positions');
-      }
-
-      setTrucks(data);
-    } catch (error) {
-      console.error('Error fetching truck positions:', error);
-    }
+// #region Types & Styles
+interface GeoPickerInputProps {
+  name: string;
+  onChange: (event: { target: { name: string; value: string; type: string } }) => void;
+  values?: Truck[];
+  intlLabel?: {
+    defaultMessage: string;
   };
+  required?: boolean;
+}
 
-  fetchTruckPositions().then();
-}, []);
+interface Truck {
+  identifier: string;
+  documentId: string;
+  name: string;
+  model: string;
+  position: {
+    latitude: number;
+    longitude: number;
+  };
+}
 
-useEffect(() => {
-  if (trucks.length > 0) {
-    const center = barycenter(trucks);
-    setCenter(center);
+interface MapEventsProps {
+  onLocationSelected: (latitude: number, longitude: number) => void;
+}
+
+// Styled components
+const MapWrapper = styled.div`
+  height: 100%;
+  width: 100%;
+
+  .leaflet-container {
+    height: 100%;
+    width: 100%;
+    border-radius: 4px;
   }
-}, [trucks]);
+`;
+
+// #endregion
+
+// Default position (Paris)
+const DEFAULT_TRUCKS: Truck[] = [
+  {
+    documentId: 'ABC',
+    identifier: '123-ABC',
+    position: { latitude: 48.8854611, longitude: 2.3284453 },
+    name: 'Test Truck Bob',
+    model: 'Corolla',
+  },
+];
+
+const MapWidget: React.FC<MapEventsProps> = () => {
+  const [trucks, setTrucks] = useState<Truck[]>(DEFAULT_TRUCKS);
+  const [zoom] = useState<number>(9);
+
+  const { get } = useFetchClient();
+
+  useEffect(() => {
+    const fetchTruckPositions = async () => {
+      try {
+        const { data } = await get('/truck-tracker/truck-positions');
+
+        setTrucks(data);
+      } catch (error) {
+        console.error('Error fetching truck positions:', error);
+      }
+    };
+
+    fetchTruckPositions().then();
+  }, []);
+
+  return (
+    <MapWrapper>
+      <MapContainer center={[48.8854611, 2.3284453]} zoom={zoom} scrollWheelZoom>
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        {trucks.map((truck) => (
+          <TruckMarker key={truck.identifier} truck={truck} />
+        ))}
+      </MapContainer>
+    </MapWrapper>
+  );
+};
+
+// Individual truck marker component
+const TruckMarker: React.FC<{ truck: Truck }> = ({ truck }) => {
+  const { backendURL } = window.strapi as any;
+  const href = `${backendURL}/admin/content-manager/collection-types/plugin::truck-tracker.truck/${truck.documentId}`;
+
+  return (
+    <Marker position={[truck.position.latitude, truck.position.longitude]}>
+      <Popup className="request-popup">
+        <h1 style={{ fontWeight: 'bold', fontSize: '1.5rem' }}>{truck.name}</h1>
+        <p style={{ fontSize: '1rem' }}>{truck.model}</p>
+        <Link href={href} target="_blank">
+          Open in content manager
+        </Link>
+      </Popup>
+    </Marker>
+  );
+};
+
+export { MapWidget };
 ```
 
 Take a look at the admin and check that it's working!

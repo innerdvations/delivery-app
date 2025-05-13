@@ -8,8 +8,9 @@ This guide will walk you through building a Strapi plugin to track delivery truc
 
 First, clone the starter code from this repo and set up your environment. This gives you a working Strapi app to build on.
 
-```
+```sh
 git clone https://github.com/innerdvations/delivery-app
+cd delivery-app
 cp .env.example .env
 yarn install
 yarn develop
@@ -21,7 +22,7 @@ yarn develop
 
 We'll use Strapi's CLI to scaffold a new plugin called `truck-tracker`. This plugin will handle all truck tracking features.
 
-```
+```sh
 npx @strapi/sdk-plugin init src/plugins/truck-tracker
 ✔ plugin name … truck-tracker
 ✔ plugin display name … Truck Tracker
@@ -40,7 +41,7 @@ npx @strapi/sdk-plugin init src/plugins/truck-tracker
 
 After running the CLI, add the plugin to your `config/plugins.ts`:
 
-```tsx
+```ts
 export default () => ({
   'truck-tracker': {
     enabled: true,
@@ -69,7 +70,7 @@ Note that this content type will be referenced as `plugin::truck-tracker.truck` 
 
 Create `plugins/truck-tracker/server/src/content-types/truck.ts`:
 
-```tsx
+```ts
 export default {
   schema: {
     kind: 'collectionType',
@@ -123,7 +124,7 @@ export default {
 
 Add it to your plugin's content-types index:
 
-```
+```ts
 import truck from './truck';
 
 export default {
@@ -200,7 +201,7 @@ strapi.customFields.register({
 
 Register it in the plugin admin `index.ts`:
 
-```tsx
+```ts
 import { PinMap } from '@strapi/icons';
 import GeoPicker from './components/GeoPicker';
 
@@ -229,7 +230,7 @@ import GeoPicker from './components/GeoPicker';
 
 Update the truck schema to use the custom field:
 
-```tsx
+```ts
       position: {
         type: 'customField',
         customField: 'global::geo-picker',
@@ -245,7 +246,7 @@ We'll use [React Leaflet](https://react-leaflet.js.org/) to let admins pick a tr
 
 Install the dependencies (inside the plugin directory):
 
-```
+```sh
 yarn add leaflet@1.9.4 react-leaflet@4.2.1
 yarn add --dev @types/leaflet@1.9.4 @types/react-leaflet
 ```
@@ -373,7 +374,7 @@ That's because Strapi has a security policy that prevents loading data from unkn
 
 To fix this, you will need to update your Content Security Policy in `config/middlewares.ts` to include the domains required for the leaflet component.
 
-```tsx
+```ts
   // replace 'strapi::security' with this object:
   {
     name: 'strapi::security',
@@ -463,7 +464,7 @@ export { MapWidget };
 
 Register the widget in `plugins/truck-tracker/admin/src/index.ts`:
 
-```tsx
+```ts
 import { getTranslation } from './utils/getTranslation';
 import { PLUGIN_ID } from './pluginId';
 import { Initializer } from './components/Initializer';
@@ -547,7 +548,7 @@ export default {
 
 If you go to the Strapi admin home page, you should now see the empty widget displayed.
 
-Now, let's add some hard-coded truck data to see how it will look with Trucks:
+Now, let's add some hard-coded truck data to 'MapWidget.tsx' and see how it will look with Trucks:
 
 ```tsx
 import { Link } from '@strapi/design-system';
@@ -645,7 +646,7 @@ To provide the actual truck data to the widget, we will need to add an admin API
 
 Create a truck controller at 'plugins/truck-tracker/server/src/controllers/truck.ts'
 
-```tsx
+```ts
 import { Core } from '@strapi/strapi';
 
 const truck = ({ strapi }: { strapi: Core.Strapi }): Core.Controller => ({
@@ -664,7 +665,7 @@ export default truck;
 
 Export the controller from the controllers/index.ts file:
 
-```tsx
+```ts
 import controller from './controller';
 import truck from './truck';
 
@@ -676,7 +677,7 @@ export default {
 
 Create file `plugins/truck-tracker/server/src/routes/admin-api.ts`:
 
-```tsx
+```ts
 export default [
   {
     method: 'GET',
@@ -693,7 +694,7 @@ export default [
 
 In `plugin/truck-tracker/server/src/routes/index.ts` we need to add the admin routes:
 
-```tsx
+```ts
 import contentAPIRoutes from './content-api';
 import adminAPIRoutes from './admin-api';
 
@@ -770,6 +771,7 @@ const MapWidget: React.FC<MapEventsProps> = () => {
   const [trucks, setTrucks] = useState<Truck[]>(DEFAULT_TRUCKS);
   const [zoom] = useState<number>(9);
 
+  // this ensure the front-end request includes Strapi auth headers
   const { get } = useFetchClient();
 
   useEffect(() => {
@@ -841,8 +843,7 @@ For security, we'll add a policy that verifies a secret key for each truck. This
 
 In `plugins/truck-tracker/server/src/controllers/controller.ts`:
 
-```tsx
-// ...
+```ts
 
 // add : Core.Controller type to controller types to get a fully typed method
 const controller = ({ strapi }: { strapi: Core.Strapi }): Core.Controller => ({
@@ -885,7 +886,7 @@ const controller = ({ strapi }: { strapi: Core.Strapi }): Core.Controller => ({
 
 In `plugins/truck-tracker/server/src/routes/content-api.ts`:
 
-```tsx
+```ts
 export default [
   {
     method: 'POST',
@@ -903,7 +904,7 @@ export default [
 
 Create a truck in the admin with identifier 'ABC' and key '123', and test it out:
 
-```
+```sh
 npx ts-node ./scripts/update-truck-position.ts ABC 52.4 13.4 123
 ```
 
@@ -922,7 +923,7 @@ This provides a simple but effective security layer. You can test it by trying t
 
 In `plugins/truck-tracker/server/src/policies/index.ts`:
 
-```tsx
+```ts
 import { Core } from '@strapi/strapi';
 
 export default {
@@ -944,7 +945,7 @@ export default {
 
 Add it to the route:
 
-```tsx
+```ts
 // ...
 export default [
   {
@@ -962,13 +963,13 @@ export default [
 
 Test with a wrong key (should fail):
 
-```
+```sh
 npx ts-node ./scripts/update-truck-position.ts ABC 52.4 13.4 wrong
 ```
 
 And with the correct key (should succeed):
 
-```
+```sh
 npx ts-node ./scripts/update-truck-position.ts ABC 52.4 13.4 123
 ```
 
@@ -987,7 +988,7 @@ This optimization ensures that the timestamp only updates when necessary, making
 
 In `plugins/truck-tracker/server/src/register.ts`:
 
-```tsx
+```ts
 import type { Core } from '@strapi/strapi';
 
 interface Position {

@@ -607,7 +607,7 @@ const MapWidget: React.FC<MapEventsProps> = () => {
 
   return (
     <MapWrapper>
-      <MapContainer center={[[48.8854611, 2.3284453]]} zoom={zoom} scrollWheelZoom>
+      <MapContainer center={[48.8854611, 2.3284453]} zoom={zoom} scrollWheelZoom>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

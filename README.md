@@ -24,6 +24,9 @@ We'll use Strapi's CLI to scaffold a new plugin called `truck-tracker`. This plu
 
 ```sh
 npx @strapi/sdk-plugin init src/plugins/truck-tracker
+```
+
+```sh
 ✔ plugin name … truck-tracker
 ✔ plugin display name … Truck Tracker
 ✔ plugin description … Track Trucks!
